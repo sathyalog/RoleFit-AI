@@ -99,11 +99,14 @@ with st.sidebar:
             st.warning("No GitHub handle found in resume.")
 
 # TOP-LEVEL NAVBAR NAVIGATION TABS
-tab_analyser, tab_skill_studio, tab_interview = st.tabs([
+# TOP-LEVEL NAVBAR NAVIGATION TABS
+tab_analyser, tab_skill_studio, tab_interview, tab_code_search = st.tabs([
     "📄 Resume Analyser", 
     "✍️ Skill Hub & Content Studio", 
-    "🎯 AI Interview Copilot"
+    "🎯 AI Interview Copilot",
+    "🔍 Local Repo Search"
 ])
+
 
 # ==============================================================================
 # TAB 1: RESUME ANALYSER WITH JD MATCHING
@@ -692,3 +695,74 @@ with tab_interview:
                     prompt = f"Context: {json.dumps(context)}. Build an architectural interview cheatsheet covering system design decisions."
                     ans = llm.invoke([HumanMessage(content=prompt)])
                     st.markdown(ans.content)
+
+# ==============================================================================
+# TAB 4: UNRESTRICTED LOCAL REPOSITORY KEYWORD SEARCH
+# ==============================================================================
+with tab_code_search:
+    st.title("🔍 Local Repository Keyword Search")
+    st.markdown(
+        "Search for specific technical concepts, algorithms, methods, or parameters "
+        "(e.g., `IVF`, `recall`, `HNSW`, `Pinecone`, `LangGraph`) across **all repositories** "
+        "indexed in your local codebase directory."
+    )
+
+    # Search bar layout
+    col_input, col_btn = st.columns([5, 1])
+    with col_input:
+        search_query = st.text_input(
+            "Enter Keyword or Method Name",
+            placeholder="e.g., IVF, recall, CosineSimilarity, RAG",
+            key="local_repo_search_query",
+            label_visibility="collapsed"
+        )
+    with col_btn:
+        search_triggered = st.button("🔍 Search", type="primary", use_container_width=True)
+
+    if search_triggered:
+        if not search_query.strip():
+            st.warning("Please enter a valid keyword to search.")
+        else:
+            with st.spinner(f"Scanning all local repositories for '{search_query}'..."):
+                # Scans all available local repository folders
+                raw_matches = scan_local_projects(search_query.strip())
+
+                if "No code or README matches found" in raw_matches or "not found" in raw_matches:
+                    st.info(f"No occurrences of **'{search_query}'** were found across your local repositories.")
+                else:
+                    # Prompt designed to parse ALL repository occurrences
+                    search_analysis_prompt = f"""
+                    Exhaustively analyze all code and README matches found for the keyword '{search_query}' across ALL local repositories.
+                    
+                    Raw Matches Data:
+                    {raw_matches}
+                    
+                    Extract every match into a structured format:
+                    1. requirement: Set to '{search_query}'.
+                    2. project_name: Name of the repository/folder where the code exists.
+                    3. file_path: Relative file path containing the code.
+                    4. code_snippet: Exact matching code snippet or block.
+                    5. interview_talking_points: Exactly 2-3 lines explaining the technical logic, workflow, or architectural purpose of this code snippet.
+                    """
+                    
+                    try:
+                        structured_search_llm = llm.with_structured_output(JDCodeProofList)
+                        analyzed_results = structured_search_llm.invoke(search_analysis_prompt)
+                        matches = analyzed_results.proofs
+                    except Exception as e:
+                        matches = []
+                        st.error(f"Error parsing local repository results: {e}")
+
+                    if matches:
+                        st.success(f"Found **{len(matches)}** result(s) across your repositories for **'{search_query}'**!")
+                        st.divider()
+
+                        for match in matches:
+                            with st.expander(f"📁 **Repository:** `{match.project_name}` | **File:** `{match.file_path}`", expanded=True):
+                                st.markdown("**Code Implementation:**")
+                                st.code(match.code_snippet, language="python")
+                                
+                                st.markdown("**Logical Workflow & Task Purpose:**")
+                                st.info(match.interview_talking_points)
+                    else:
+                        st.warning("Could not extract structured results from the repository matches.")
