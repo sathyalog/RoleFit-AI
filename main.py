@@ -1,8 +1,11 @@
 import os
 import json
-from typing import Literal, Optional, TypedDict, Dict, Any, List
+import datetime
+import uuid
+from typing import Dict, Any
 
 import streamlit as st
+import pandas as pd
 from pypdf import PdfReader
 from dotenv import load_dotenv
 
@@ -36,6 +39,23 @@ from core.schemas import (
     ResumeStudioOutput,
     LinkedInStudioOutput,
     GitHubReadmeOutput
+)
+from core.screening import (
+    ScreeningState,
+    build_structured_model,
+    extract_screening_output,
+    compute_skill_match,
+    CheckCriteria,
+)
+from evaluation import (
+    DEFAULT_DATASET_PATH,
+    evaluate_dataset,
+    build_full_report,
+    load_full_report,
+    render_html_report,
+    append_live_run,
+    load_live_runs,
+    save_live_run_as_gold_case,
 )
 
 # Import Deep Agent Reflection Nodes
@@ -100,11 +120,12 @@ with st.sidebar:
 
 # TOP-LEVEL NAVBAR NAVIGATION TABS
 # TOP-LEVEL NAVBAR NAVIGATION TABS
-tab_analyser, tab_skill_studio, tab_interview, tab_code_search = st.tabs([
-    "📄 Resume Analyser", 
-    "✍️ Skill Hub & Content Studio", 
+tab_analyser, tab_skill_studio, tab_interview, tab_code_search, tab_evaluation = st.tabs([
+    "📄 Resume Analyser",
+    "✍️ Skill Hub & Content Studio",
     "🎯 AI Interview Copilot",
-    "🔍 Local Repo Search"
+    "🔍 Local Repo Search",
+    "📊 Evaluation & Accuracy",
 ])
 
 
@@ -135,71 +156,33 @@ with tab_analyser:
         )
 
     # Screening State & Graph Setup
-    class ScreeningState(TypedDict, total=False):
-        company_name: Optional[str]
-        candidate_name: Optional[str]
-        job_title: Optional[str]
-        candidate_experience: Optional[float]
-        experience_required: Optional[float]
-        skill_match: Optional[float]
-        required_skills: List[str]
-        candidate_skills: List[str]
-        matched_skills: List[str]
-        resume_text: Optional[str]
-        job_description: Optional[str]
-        github_handle: Optional[str]
-        github_mcp_output: Optional[str]
-        pii_scrubbed: bool
-        rejection_feedback: str
-        critique: str
-        reflection_count: int
-
-    structured_model = llm.with_structured_output(ScreeningModel)
+    structured_model = build_structured_model(llm)
 
     @traceable(name="analyse_resume_with_jd")
     def AnalyseResumeWithJD(state: ScreeningState) -> ScreeningState:
         resume_text = state.get("resume_text", "")
         job_description = state.get("job_description", "")
 
-        prompt = f"""
-        You are an expert technical recruiter parsing a Candidate Resume and a Job Description.
-        Extract candidate_name, company_name, job_title, candidate_experience, experience_required, and detected_roles.
-        Extract required_skills and candidate_skills exhaustively. Normalize common tech names.
-        
-        Candidate Resume: {resume_text}
-        Job Description: {job_description}
-        """
-        output: ScreeningModel = structured_model.invoke(prompt)
+        output: ScreeningModel = extract_screening_output(resume_text, job_description, structured_model)
 
         if output.detected_roles:
             st.session_state.parsed_candidate_roles = list(dict.fromkeys(output.detected_roles + st.session_state.parsed_candidate_roles))
 
         req_skills = output.required_skills or []
         cand_skills = output.candidate_skills or []
-        req_set_lower = {s.strip().lower() for s in req_skills if s.strip()}
-        cand_set_lower = {s.strip().lower() for s in cand_skills if s.strip()}
-        matched_set_lower = req_set_lower.intersection(cand_set_lower)
-        exact_matched = [s for s in req_skills if s.strip().lower() in matched_set_lower]
-        exact_score = len(matched_set_lower) / len(req_set_lower) if len(req_set_lower) > 0 else 0.0
+        match = compute_skill_match(req_skills, cand_skills)
 
         return {
             "company_name": output.company_name,
             "candidate_name": output.candidate_name,
-            "skill_match": exact_score,
+            "skill_match": match["skill_match"],
             "candidate_experience": output.candidate_experience,
             "experience_required": output.experience_required,
             "job_title": output.job_title,
             "required_skills": req_skills,
             "candidate_skills": cand_skills,
-            "matched_skills": exact_matched,
+            "matched_skills": match["matched_skills"],
         }
-
-    @traceable(name="check_criteria")
-    def CheckCriteria(state: ScreeningState) -> Literal["ShortList", "Reject"]:
-        skill_match = state.get("skill_match", 0.0)
-        candidate_exp = state.get("candidate_experience", 0.0)
-        exp_required = state.get("experience_required", 0.0)
-        return "ShortList" if (skill_match >= 0.50 and candidate_exp >= exp_required) else "Reject"
 
     @traceable(name="shortlist")
     def ShortList(state: ScreeningState) -> ScreeningState:
@@ -298,6 +281,25 @@ with tab_analyser:
                     }
                     final_state = resume_analyser_graph.invoke(initial_state)
                     st.session_state.final_analysis_state = final_state
+
+                    append_live_run({
+                        "run_id": uuid.uuid4().hex[:8],
+                        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+                        "company_name": final_state.get("company_name"),
+                        "job_title": final_state.get("job_title"),
+                        "candidate_name": final_state.get("candidate_name"),
+                        "candidate_experience": final_state.get("candidate_experience"),
+                        "experience_required": final_state.get("experience_required"),
+                        "required_skills": final_state.get("required_skills", []),
+                        "candidate_skills": final_state.get("candidate_skills", []),
+                        "matched_skills": final_state.get("matched_skills", []),
+                        "skill_match": final_state.get("skill_match"),
+                        "decision": CheckCriteria(final_state),
+                        # resume_text/job_description here are already PII-scrubbed by the
+                        # scrub_pii graph node before this point in the pipeline.
+                        "resume_text": final_state.get("resume_text", ""),
+                        "job_description": final_state.get("job_description", ""),
+                    })
 
                 with st.spinner("2/2 Scanning local 15 project codebases for matching implementation code..."):
                     st.session_state.jd_code_proofs = extract_jd_code_proofs(final_state.get("required_skills", []))
@@ -761,8 +763,114 @@ with tab_code_search:
                             with st.expander(f"📁 **Repository:** `{match.project_name}` | **File:** `{match.file_path}`", expanded=True):
                                 st.markdown("**Code Implementation:**")
                                 st.code(match.code_snippet, language="python")
-                                
+
                                 st.markdown("**Logical Workflow & Task Purpose:**")
                                 st.info(match.interview_talking_points)
                     else:
                         st.warning("Could not extract structured results from the repository matches.")
+
+# ==============================================================================
+# TAB 5: EVALUATION & ACCURACY
+# ==============================================================================
+with tab_evaluation:
+    st.title("📊 Evaluation & Accuracy")
+    st.caption("How the skill-match score and ShortList/Reject decision are computed, a golden-set accuracy report, and a log of every real analysis this app has run.")
+
+    with st.expander("📐 How the score & decision are calculated", expanded=False):
+        st.markdown("""
+**Skill match** — case-insensitive exact-string overlap between required and candidate skills:
+```
+skill_match = |required_skills ∩ candidate_skills| / |required_skills|
+```
+**Decision** — a deterministic threshold rule, not an LLM judgment:
+```
+ShortList  if skill_match >= 0.50  AND  candidate_experience >= experience_required
+Reject     otherwise
+```
+The LLM's only job is *extracting* `required_skills`, `candidate_skills`, and experience numbers from text (`core/screening.py`). That split is what makes accuracy measurable at all: decision-logic correctness is testable with zero LLM calls (below), and extraction correctness is testable against hand-labeled ground truth. See `evaluation.py` and the README's "Evaluation Harness" section for the full CLI tooling this tab is built on.
+""")
+
+    st.divider()
+    st.subheader("🥇 Golden-Set Accuracy (offline, hand-labeled ground truth)")
+
+    eval_col1, eval_col2 = st.columns([3, 1])
+    with eval_col2:
+        eval_mode = st.selectbox(
+            "Mode", ["logic", "e2e"], index=0,
+            help="logic = free, checks only the ShortList/Reject decision math. e2e = calls Claude, checks real skill-extraction accuracy too.",
+        )
+        run_eval_clicked = st.button("▶️ Re-run evaluation now", type="primary")
+
+    if run_eval_clicked:
+        with st.spinner(f"Running '{eval_mode}' evaluation against {DEFAULT_DATASET_PATH}..."):
+            mode_reports = evaluate_dataset(DEFAULT_DATASET_PATH, [eval_mode])
+            full_report = build_full_report(mode_reports, DEFAULT_DATASET_PATH)
+            os.makedirs("eval", exist_ok=True)
+            with open("eval/last_run.json", "w", encoding="utf-8") as f:
+                json.dump(full_report, f, indent=2)
+            with open("eval/last_run.html", "w", encoding="utf-8") as f:
+                f.write(render_html_report(mode_reports, DEFAULT_DATASET_PATH))
+            st.session_state.eval_full_report = full_report
+        st.success("Evaluation complete — eval/last_run.json and eval/last_run.html updated.")
+
+    full_report = st.session_state.get("eval_full_report") or load_full_report("eval/last_run.json")
+
+    if full_report:
+        st.caption(f"Dataset: `{full_report['dataset']}` · Last generated: {full_report['generated_at']}")
+        for run in full_report["runs"]:
+            summary = run["summary"]
+            st.markdown(f"**Mode: `{run['mode']}`**")
+
+            df = pd.DataFrame(run["results"])
+            display_cols = [c for c in ["case_id", "expected_decision", "predicted_decision", "decision_correct", "predicted_skill_match"] if c in df.columns]
+            st.dataframe(df[display_cols], width="stretch", hide_index=True)
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Decision Accuracy", f"{summary['accuracy'] * 100:.1f}%")
+            m2.metric("required_skills F1", f"{summary['required_skills_macro']['f1']:.2f}")
+            m3.metric("candidate_skills F1", f"{summary['candidate_skills_macro']['f1']:.2f}")
+
+            cm = summary["confusion_matrix"]
+            st.caption(
+                f"Confusion matrix — Exp:ShortList→Pred:ShortList={cm['exp_ShortList_pred_ShortList']}, "
+                f"Exp:ShortList→Pred:Reject={cm['exp_ShortList_pred_Reject']}, "
+                f"Exp:Reject→Pred:ShortList={cm['exp_Reject_pred_ShortList']}, "
+                f"Exp:Reject→Pred:Reject={cm['exp_Reject_pred_Reject']}"
+            )
+            st.divider()
+        st.caption("Full report also saved to `eval/last_run.html` (open in a browser) and `eval/last_run.json`.")
+    else:
+        st.info("No evaluation has been run yet. Click 'Re-run evaluation now' above, or run `uv run python evaluation.py --mode e2e` from the terminal.")
+
+    st.divider()
+    st.subheader("📝 Live Analysis Log")
+    st.caption("Every real 'Analyze Candidate' run in Tab 1 is recorded here. These have no ground truth yet — label one below to promote it into the golden set.")
+
+    live_runs = load_live_runs()
+    if not live_runs:
+        st.info("No analyses recorded yet. Run 'Analyze Candidate' in Tab 1 to populate this log.")
+    else:
+        for run in reversed(live_runs[-25:]):
+            skill_match_val = run.get("skill_match") or 0.0
+            header = (
+                f"{run['timestamp']} — {run.get('job_title') or 'Unknown Role'} @ "
+                f"{run.get('company_name') or 'Unknown Company'} → **{run['decision']}** "
+                f"(skill_match={skill_match_val:.2f})"
+            )
+            with st.expander(header):
+                st.write(f"**Required skills:** {', '.join(run.get('required_skills', [])) or '—'}")
+                st.write(f"**Candidate skills:** {', '.join(run.get('candidate_skills', [])) or '—'}")
+                st.write(f"**Experience:** {run.get('candidate_experience')} yrs (required: {run.get('experience_required')} yrs)")
+
+                with st.form(key=f"label_form_{run['run_id']}"):
+                    expected = st.radio(
+                        "What should the correct decision have been?",
+                        ["ShortList", "Reject"], horizontal=True, key=f"expected_{run['run_id']}",
+                    )
+                    label_notes = st.text_input("Why? (saved as the case's notes)", key=f"notes_{run['run_id']}")
+                    if st.form_submit_button("💾 Save as golden-set case"):
+                        ok, msg = save_live_run_as_gold_case(run, expected_decision=expected, notes=label_notes)
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.warning(msg)

@@ -1,0 +1,149 @@
+{
+  "dataset": "eval/gold_dataset.json",
+  "generated_at": "2026-09-17T18:07:59",
+  "runs": [
+    {
+      "mode": "logic",
+      "summary": {
+        "total_cases": 4,
+        "errored_cases": 0,
+        "correct": 4,
+        "accuracy": 1.0,
+        "confusion_matrix": {
+          "exp_ShortList_pred_ShortList": 2,
+          "exp_ShortList_pred_Reject": 0,
+          "exp_Reject_pred_ShortList": 0,
+          "exp_Reject_pred_Reject": 2
+        },
+        "required_skills_macro": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "candidate_skills_macro": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "results": [
+        {
+          "case_id": "case_01_strong_match_ai_engineer",
+          "mode": "logic",
+          "predicted_decision": "ShortList",
+          "expected_decision": "ShortList",
+          "decision_correct": true,
+          "predicted_skill_match": 0.8,
+          "required_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 5,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "candidate_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 6,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "error": null
+        },
+        {
+          "case_id": "case_02_weak_skill_overlap",
+          "mode": "logic",
+          "predicted_decision": "Reject",
+          "expected_decision": "Reject",
+          "decision_correct": true,
+          "predicted_skill_match": 0.0,
+          "required_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 5,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "candidate_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 5,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "error": null
+        },
+        {
+          "case_id": "case_03_insufficient_experience",
+          "mode": "logic",
+          "predicted_decision": "Reject",
+          "expected_decision": "Reject",
+          "decision_correct": true,
+          "predicted_skill_match": 1.0,
+          "required_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 4,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "candidate_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 5,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "error": null
+        },
+        {
+          "case_id": "case_04_borderline_exact_threshold",
+          "mode": "logic",
+          "predicted_decision": "ShortList",
+          "expected_decision": "ShortList",
+          "decision_correct": true,
+          "predicted_skill_match": 0.5,
+          "required_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 4,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "candidate_skills_score": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positive": 4,
+            "false_positive": 0,
+            "false_negative": 0,
+            "missing": [],
+            "extra": []
+          },
+          "error": null
+        }
+      ]
+    }
+  ]
+}

@@ -305,3 +305,99 @@ Finally after integrating deep agent, this is how system will show suggestions a
 Show company info, role and required experience in one section and similarly candidate details in separate section as follows.
 
 ![new-ui](<Screenshot 2026-08-26 at 12.56.17 PM.png>)
+
+---
+
+## 🧪 Evaluation Harness: How Accuracy Is Measured
+
+"How do you know your resume/JD match score is accurate?" is a fair question, and "we used an LLM as a judge" isn't a rigorous answer on its own — self-grading has no ground truth and can't tell you *what specifically* is wrong. This app's final `ShortList`/`Reject` call is actually **deterministic code**, not an LLM judgment:
+
+```
+skill_match = |required_skills ∩ candidate_skills| / |required_skills|   (case-insensitive, exact string match)
+decision    = ShortList  if skill_match >= 0.50 AND candidate_experience >= experience_required
+              Reject      otherwise
+```
+
+That means "is the score accurate" splits into two independently testable things:
+
+1. **Decision logic accuracy** — is the `>= 0.50` threshold + experience-gate rule itself applied correctly? This is pure Python, so it can be checked with zero LLM calls.
+2. **Extraction accuracy** — does Claude correctly pull `required_skills`, `candidate_skills`, and experience numbers out of the resume/JD text in the first place? This is where real error creeps in (e.g. the resume says "AWS Lambda" but the JD says "AWS" — exact-string matching misses that).
+
+### Where the logic lives
+`core/screening.py` holds the Streamlit-free scoring/decision code (`compute_skill_match`, `CheckCriteria`, `extract_screening_output`) that `main.py` actually runs in production. `evaluation.py` imports the **same functions** — the eval never reimplements the scoring math, so the app and the eval can't silently drift apart.
+
+### The gold dataset
+`eval/gold_dataset.json` is a hand-labeled set of resume/JD test cases. Each case has the resume text, JD text, and a human-verified "correct" answer:
+
+```json
+{
+  "id": "case_01_strong_match_ai_engineer",
+  "resume_text": "...",
+  "job_description": "...",
+  "gold_required_skills": ["Python", "LangGraph", "AWS", "Docker", "Vector Databases"],
+  "gold_candidate_skills": ["Python", "LangGraph", "AWS", "Docker", "Pinecone", "RAG"],
+  "gold_candidate_experience": 6.0,
+  "gold_experience_required": 5.0,
+  "expected_decision": "ShortList",
+  "notes": "human rationale for why this is the correct answer"
+}
+```
+It ships with 4 seeded cases (strong match, zero skill overlap, sufficient skills but insufficient experience, and an exact 0.50-boundary regression guard). Add your own real, hand-labeled resume/JD pairs to this file to grow the eval set — the format doesn't need to change.
+
+### Evaluating a real upload with a golden set (growing the dataset from actual usage)
+
+The 4 seeded cases are synthetic. To check the app's accuracy on a resume/JD pair you actually tested in the Streamlit UI, turn that specific upload into a new gold case with `--add-case` — you supply the "correct" skills/experience/decision from your own read of the resume and JD (not from the app's output), so it stays an independent check:
+
+```bash
+uv run python evaluation.py --add-case \
+  --case-id my_real_upload_01 \
+  --resume-pdf ~/Downloads/my_resume.pdf \
+  --jd-file jd.txt \
+  --required-skills "Python,LangGraph,AWS,Docker" \
+  --candidate-skills "Python,LangGraph,AWS,Docker,Pinecone" \
+  --candidate-experience 6 \
+  --experience-required 5 \
+  --expected-decision ShortList \
+  --notes "why I believe this is the correct answer"
+```
+(`--resume-text`/`--jd-text` work instead of `--resume-pdf`/`--jd-file` if you'd rather paste text directly.) This appends the case to `eval/gold_dataset.json` (refuses to add a duplicate `--case-id`). Then re-run the evaluation — the new case is included automatically since it just reads whatever is in the dataset file:
+
+```bash
+uv run python evaluation.py --mode e2e --verbose
+```
+If the app's predicted decision or extracted skills disagree with what you labeled, that's a real, reproducible finding tied to an actual resume/JD you care about — not a synthetic example. Repeat this after every upload you want to hold the app accountable for, and the golden set grows into a real regression suite over time.
+
+### Running the evaluation locally
+
+```bash
+# 1. Sanity-check the harness itself: proves the scorer can actually detect
+#    a wrong answer, not just always report success. No API key needed.
+uv run python evaluation.py --self-test
+
+# 2. Pure decision-logic check against the gold dataset ($0 cost, no LLM calls).
+#    Feeds the GOLD skill lists straight into the real compute_skill_match +
+#    CheckCriteria code and checks the ShortList/Reject decision math.
+uv run python evaluation.py --mode logic --verbose
+
+# 3. Full end-to-end check with the real Claude extraction call (small cost,
+#    needs ANTHROPIC_API_KEY in .env). This is the real accuracy signal:
+#    precision/recall/F1 of what Claude actually extracts vs. the gold labels.
+uv run python evaluation.py --mode e2e --verbose
+
+# 4. Run everything and save results for inspection / before-after comparison.
+uv run python evaluation.py --mode all --json-out eval/last_run.json --html-out eval/last_run.html
+```
+
+### 📊 In-app "Evaluation & Accuracy" tab
+
+The Streamlit app itself now has a 5th tab, **"📊 Evaluation & Accuracy"**, so you don't have to leave the browser to see any of this:
+- **Methodology** — the same skill-match/decision formulas explained above.
+- **Golden-Set Accuracy** — loads `eval/last_run.json` automatically, or click **"Re-run evaluation now"** (pick `logic` for a free instant check, or `e2e` to spend a few real Claude calls) to regenerate `eval/last_run.json`/`eval/last_run.html` directly from the UI.
+- **Live Analysis Log** — every real "Analyze Candidate" run from Tab 1 is automatically recorded here (in `eval/live_runs.json`, resume/JD text already PII-scrubbed). Each entry can be labeled with the decision you believe is correct and saved straight into `eval/gold_dataset.json` as a new golden-set case — the in-app equivalent of `evaluation.py --add-case`, without needing the terminal.
+
+### Identifying the results
+- **Terminal report**: a per-case table (`Expected` vs `Predicted`, `OK`/`MISS`), a confusion matrix, and macro precision/recall/F1 for skill extraction.
+- **`eval/last_run.json`**: the same results as structured data, for diffing between runs (e.g. before/after a prompt change).
+- **`eval/last_run.html`**: an HTML report you can open directly in a browser (`open eval/last_run.html` on macOS) — color-codes each case green (correct) or red (mismatch), and shows the same decision-accuracy and extraction-quality breakdown as the terminal output, per mode run.
+
+A concrete example from a real `--mode e2e` run: the harness caught that Claude extracted "AWS Lambda" from a resume where the gold label was "AWS" — since matching is exact-string, that counted as both a missed skill and an extra one, dragging `candidate_skills` recall down to 0.60 for that case. That's the kind of specific, falsifiable finding a self-grading LLM judge would likely have glossed over as "close enough."

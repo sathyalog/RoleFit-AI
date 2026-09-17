@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "case_01_strong_match_ai_engineer",
+      "description": "Senior AI engineer resume vs. a well-matched Staff AI Engineer JD - should shortlist.",
+      "resume_text": "John Doe. 6 years of experience building production LangGraph multi-agent systems in Python. Deployed on AWS with Docker containers. Built RAG pipelines backed by Pinecone vector search and wrote extensive integration tests for each release.",
+      "job_description": "We are hiring a Staff AI Engineer with 5+ years of experience in Python, LangGraph, AWS, Docker, and Vector Databases. You will own our agentic AI platform end to end.",
+      "gold_required_skills": ["Python", "LangGraph", "AWS", "Docker", "Vector Databases"],
+      "gold_candidate_skills": ["Python", "LangGraph", "AWS", "Docker", "Pinecone", "RAG"],
+      "gold_candidate_experience": 6.0,
+      "gold_experience_required": 5.0,
+      "expected_decision": "ShortList",
+      "notes": "4/5 required skills present exactly (Pinecone is a vector DB but is not the literal string 'Vector Databases', so exact-match scoring counts it as 4/5 = 0.80); experience 6.0 >= 5.0. 0.80 >= 0.50 and 6.0 >= 5.0 -> ShortList."
+    },
+    {
+      "id": "case_02_weak_skill_overlap",
+      "description": "Frontend-heavy resume against a backend-heavy JD - should reject on skill match despite ample experience.",
+      "resume_text": "Jane Smith. 7 years building React and JavaScript single-page apps with CSS and HTML, plus some Node.js tooling for internal dashboards.",
+      "job_description": "Seeking a backend engineer with strong Java, Spring Boot, Kubernetes, PostgreSQL, and Kafka experience. 4+ years required.",
+      "gold_required_skills": ["Java", "Spring Boot", "Kubernetes", "PostgreSQL", "Kafka"],
+      "gold_candidate_skills": ["JavaScript", "React", "CSS", "HTML", "Node.js"],
+      "gold_candidate_experience": 7.0,
+      "gold_experience_required": 4.0,
+      "expected_decision": "Reject",
+      "notes": "0/5 skill overlap -> skill_match 0.00 < 0.50 threshold; rejects regardless of the 7.0 >= 4.0 experience being sufficient."
+    },
+    {
+      "id": "case_03_insufficient_experience",
+      "description": "Full skill overlap but candidate has too little experience for a senior role - should reject on the experience gate.",
+      "resume_text": "Alex Kim. 1.5 years of professional experience. Built small internal tools using Python, SQL, AWS Lambda, and Docker.",
+      "job_description": "Senior Platform Engineer, 6+ years required. Must know Python, SQL, AWS, and Docker.",
+      "gold_required_skills": ["Python", "SQL", "AWS", "Docker"],
+      "gold_candidate_skills": ["Python", "SQL", "AWS", "Docker", "Terraform"],
+      "gold_candidate_experience": 1.5,
+      "gold_experience_required": 6.0,
+      "expected_decision": "Reject",
+      "notes": "Skill match is 4/4 = 1.00 but experience 1.5 < 6.0 -> Reject. Verifies the AND-gate: a perfect skill score alone is not enough."
+    },
+    {
+      "id": "case_04_borderline_exact_threshold",
+      "description": "Skill match lands exactly on the 0.50 boundary with sufficient experience - regression guard for the >= operator.",
+      "resume_text": "Priya Nair. 5 years building cloud infrastructure with Python and AWS, plus Redis caching and GraphQL APIs.",
+      "job_description": "DevOps Engineer, 5+ years, must have Python, AWS, Docker, and Kubernetes.",
+      "gold_required_skills": ["Python", "AWS", "Docker", "Kubernetes"],
+      "gold_candidate_skills": ["Python", "AWS", "Redis", "GraphQL"],
+      "gold_candidate_experience": 5.0,
+      "gold_experience_required": 5.0,
+      "expected_decision": "ShortList",
+      "notes": "2/4 = 0.50 exactly. CheckCriteria uses >= 0.50, so this case must ShortList - catches a > vs >= regression if the threshold operator ever changes."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Resume/JD Screening Evaluation Report</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: Canvas; color: CanvasText; }
+  h1 { font-size: 1.4rem; }
+  h2 { margin-top: 2.5rem; border-bottom: 2px solid #888; padding-bottom: 0.3rem; }
+  h3 { margin-top: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; font-size: 0.9rem; }
+  th, td { border: 1px solid #999; padding: 0.4rem 0.6rem; text-align: left; }
+  tr.ok td { background: rgba(46, 125, 50, 0.15); }
+  tr.miss td { background: rgba(198, 40, 40, 0.18); font-weight: 600; }
+  tr.error td { background: rgba(255, 152, 0, 0.18); }
+  tr.detail td { font-size: 0.8rem; opacity: 0.85; background: none; border-top: none; }
+  .meta { opacity: 0.75; font-size: 0.9rem; }
+  .note { font-style: italic; opacity: 0.8; }
+  .cost { font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Resume/JD Screening Evaluation Report</h1>
+  <p class="meta">Dataset: eval/gold_dataset.json &middot; Generated: 2026-09-17 18:07:59</p>
+  
+        <section>
+          <h2>Mode: logic</h2>
+          <p class="cost">NO LLM calls, $0 cost</p>
+          <table class="cases">
+            <thead><tr><th>Case ID</th><th>Expected</th><th>Predicted</th><th>Match</th><th>Skill Match</th></tr></thead>
+            <tbody><tr class='ok'><td>case_01_strong_match_ai_engineer</td><td>ShortList</td><td>ShortList</td><td>OK</td><td>0.80</td></tr><tr class='detail'><td colspan='5'>required_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]<br>candidate_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]</td></tr><tr class='ok'><td>case_02_weak_skill_overlap</td><td>Reject</td><td>Reject</td><td>OK</td><td>0.00</td></tr><tr class='detail'><td colspan='5'>required_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]<br>candidate_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]</td></tr><tr class='ok'><td>case_03_insufficient_experience</td><td>Reject</td><td>Reject</td><td>OK</td><td>1.00</td></tr><tr class='detail'><td colspan='5'>required_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]<br>candidate_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]</td></tr><tr class='ok'><td>case_04_borderline_exact_threshold</td><td>ShortList</td><td>ShortList</td><td>OK</td><td>0.50</td></tr><tr class='detail'><td colspan='5'>required_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]<br>candidate_skills: P=1.00 R=1.00 F1=1.00 missing=[] extra=[]</td></tr></tbody>
+          </table>
+
+          <h3>Decision Accuracy</h3>
+          <p><strong>4/4</strong>
+             (100.0%) correct
+             </p>
+          <table class="confusion">
+            <thead><tr><th></th><th>Pred: ShortList</th><th>Pred: Reject</th></tr></thead>
+            <tbody>
+              <tr><th>Exp: ShortList</th><td>2</td><td>0</td></tr>
+              <tr><th>Exp: Reject</th><td>0</td><td>2</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Skill Extraction Quality</h3>
+          <p class='note'>NOTE: logic mode compares gold skills to themselves - trivially perfect. Run --mode e2e to measure real LLM extraction quality.</p>
+          <p>required_skills: precision=1.00 recall=1.00 f1=1.00</p>
+          <p>candidate_skills: precision=1.00 recall=1.00 f1=1.00</p>
+        </section>
+        
+</body>
+</html>
