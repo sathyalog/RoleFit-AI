@@ -114,6 +114,27 @@ with st.sidebar:
         else:
             st.warning("No GitHub handle found in resume.")
 
+    # GitHub access: use the deployment's own token when configured, otherwise
+    # let the user supply theirs (kept only in this session, never saved).
+    st.divider()
+    st.subheader("GitHub Access")
+    if os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"):
+        github_token = None  # run_github_mcp falls back to the deployment secret
+        st.caption("✅ GitHub repo & commit analysis is enabled.")
+    else:
+        github_token = st.text_input(
+            "Your GitHub token (optional)",
+            type="password",
+            key="user_github_token",
+            help="Used only for this session to read the public repos and commits of the "
+                 "GitHub handle found in the resume. It is never stored.",
+        ).strip() or None
+        st.caption(
+            "Enables GitHub repo & commit analysis. Create a read-only "
+            "[fine-grained token](https://github.com/settings/personal-access-tokens/new) "
+            "with public repository access."
+        )
+
 # TOP-LEVEL NAVBAR NAVIGATION TABS
 # TOP-LEVEL NAVBAR NAVIGATION TABS
 tab_analyser, tab_skill_studio, tab_interview, tab_code_search, tab_evaluation = st.tabs([
@@ -342,8 +363,12 @@ with tab_analyser:
 
             st.divider()
             st.subheader("GitHub MCP Analysis")
-            if github_username:
-                mcp_res = run_github_mcp(final_state)
+            if not github_username:
+                st.info("No GitHub handle found in the resume, so GitHub analysis was skipped.")
+            elif not (github_token or os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")):
+                st.info("🔑 Add your GitHub token in the sidebar to match this JD against the candidate's GitHub repos and commits.")
+            else:
+                mcp_res = run_github_mcp(final_state, token=github_token)
                 st.markdown(mcp_res.get("github_mcp_output", "No GitHub data available."))
         else:
             st.info("👆 Upload a resume and click 'Analyze Candidate' above to view match results.")

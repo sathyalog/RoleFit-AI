@@ -209,7 +209,7 @@ def format_github_response(repos_raw: Any, commits_raw: Any, resume_skills: List
 
 
 # Asynchronous Node to execute MCP Client
-async def FetchGitHubMCPData(state: Dict[str, Any]) -> Dict[str, Any]:
+async def FetchGitHubMCPData(state: Dict[str, Any], token: str | None = None) -> Dict[str, Any]:
     handle = state.get("github_handle")
 
     if not handle:
@@ -217,10 +217,11 @@ async def FetchGitHubMCPData(state: Dict[str, Any]) -> Dict[str, Any]:
             "github_mcp_output": "GitHub analysis skipped: No GitHub handle detected in state."
         }
 
-    token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
+    # Prefer a caller-supplied token (e.g. entered by the app user) over the deployment's own secret
+    token = token or os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
     if not token:
         return {
-            "github_mcp_output": "Error: GITHUB_PERSONAL_ACCESS_TOKEN is missing in environment variables."
+            "github_mcp_output": "GitHub analysis skipped: no GitHub token provided. Add one in the sidebar to enable it."
         }
 
     # Extract dynamic resume and JD skills safely from state
@@ -335,5 +336,5 @@ async def FetchGitHubMCPData(state: Dict[str, Any]) -> Dict[str, Any]:
         return {"github_mcp_output": f"MCP Execution Error: {str(e)}"}
 
 
-def run_github_mcp(state: Dict[str, Any]) -> Dict[str, Any]:
-    return asyncio.run(FetchGitHubMCPData(state))
+def run_github_mcp(state: Dict[str, Any], token: str | None = None) -> Dict[str, Any]:
+    return asyncio.run(FetchGitHubMCPData(state, token))
