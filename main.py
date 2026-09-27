@@ -23,7 +23,8 @@ from PII_detection import redact_pii_presidio
 from firecrawl_scraping import extract_jd_from_url
 
 # Import Centralized Storage Functions & Clean Schemas
-from core.storage import load_json_data, save_json_data
+from core.storage import load_json_data, save_json_data, reset_json_data, export_profile_json
+from core.app_mode import is_public_mode
 from core.llm import get_llm
 from mcp_codebase import scan_local_projects, DEFAULT_PROJECTS_DIR
 from core.schemas import JDCodeProofList
@@ -49,6 +50,7 @@ from core.screening import (
 )
 from evaluation import (
     DEFAULT_DATASET_PATH,
+    SHOWCASE_REPORT_PATH,
     evaluate_dataset,
     build_full_report,
     load_full_report,
@@ -84,6 +86,23 @@ st.set_page_config(
 )
 
 llm = get_llm(max_tokens=2500)
+
+# Public mode (hosted demo): per-visitor session data only, no disk writes, no local-repo features.
+PUBLIC_MODE = is_public_mode()
+MAX_SESSION_LIVE_RUNS = 25
+
+
+def record_live_run(record: dict) -> None:
+    if PUBLIC_MODE:
+        runs = st.session_state.setdefault("session_live_runs", [])
+        runs.append(record)
+        del runs[:-MAX_SESSION_LIVE_RUNS]
+    else:
+        append_live_run(record)
+
+
+def get_live_runs() -> list:
+    return st.session_state.get("session_live_runs", []) if PUBLIC_MODE else load_live_runs()
 
 extracted_resume_text = ""
 github_username = None
@@ -136,14 +155,22 @@ with st.sidebar:
         )
 
 # TOP-LEVEL NAVBAR NAVIGATION TABS
-# TOP-LEVEL NAVBAR NAVIGATION TABS
-tab_analyser, tab_skill_studio, tab_interview, tab_code_search, tab_evaluation = st.tabs([
-    "📄 Resume Analyser",
-    "✍️ Skill Hub & Content Studio",
-    "🎯 AI Interview Copilot",
-    "🔍 Local Repo Search",
-    "📊 Evaluation & Accuracy",
-])
+if PUBLIC_MODE:
+    tab_analyser, tab_skill_studio, tab_interview, tab_evaluation = st.tabs([
+        "📄 Resume Analyser",
+        "✍️ Skill Hub & Content Studio",
+        "🎯 AI Interview Copilot",
+        "📊 Evaluation & Accuracy",
+    ])
+    tab_code_search = None
+else:
+    tab_analyser, tab_skill_studio, tab_interview, tab_code_search, tab_evaluation = st.tabs([
+        "📄 Resume Analyser",
+        "✍️ Skill Hub & Content Studio",
+        "🎯 AI Interview Copilot",
+        "🔍 Local Repo Search",
+        "📊 Evaluation & Accuracy",
+    ])
 
 
 # ==============================================================================
@@ -299,7 +326,7 @@ with tab_analyser:
                     final_state = resume_analyser_graph.invoke(initial_state)
                     st.session_state.final_analysis_state = final_state
 
-                    append_live_run({
+                    record_live_run({
                         "run_id": uuid.uuid4().hex[:8],
                         "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
                         "company_name": final_state.get("company_name"),
@@ -318,8 +345,9 @@ with tab_analyser:
                         "job_description": final_state.get("job_description", ""),
                     })
 
-                with st.spinner("2/2 Scanning local 15 project codebases for matching implementation code..."):
-                    st.session_state.jd_code_proofs = extract_jd_code_proofs(final_state.get("required_skills", []))
+                if not PUBLIC_MODE:
+                    with st.spinner("2/2 Scanning local 15 project codebases for matching implementation code..."):
+                        st.session_state.jd_code_proofs = extract_jd_code_proofs(final_state.get("required_skills", []))
 
                 # Mark analysis as complete to enable the 2nd subtab
                 st.session_state.analysis_completed = True
@@ -328,10 +356,13 @@ with tab_analyser:
     # ==========================================================================
     # CREATING INNER SUBTABS FOR TAB 1
     # ==========================================================================
-    subtab_results, subtab_code_proofs = st.tabs([
-        "📊 Candidate Match Results", 
-        "🔒 Local Codebase Proof & Notes" if not st.session_state.analysis_completed else "🎯 Local Codebase Proof & Notes"
-    ])
+    if PUBLIC_MODE:
+        (subtab_results,) = st.tabs(["📊 Candidate Match Results"])
+    else:
+        subtab_results, subtab_code_proofs = st.tabs([
+            "📊 Candidate Match Results",
+            "🔒 Local Codebase Proof & Notes" if not st.session_state.analysis_completed else "🎯 Local Codebase Proof & Notes"
+        ])
 
     # --------------------------------------------------------------------------
     # SUBTAB 1: ANALYSIS RESULTS
@@ -373,28 +404,29 @@ with tab_analyser:
         else:
             st.info("👆 Upload a resume and click 'Analyze Candidate' above to view match results.")
 
-    # --------------------------------------------------------------------------
-    # SUBTAB 2: GATED LOCAL CODEBASE PROOF
-    # --------------------------------------------------------------------------
-    with subtab_code_proofs:
-        if not st.session_state.analysis_completed:
-            st.warning("🔒 **Section Locked:** Please click **'Analyze Candidate'** above to run JD parsing and unlock implementation proofs from your 15 local projects.")
-        else:
-            st.subheader("🎯 Local Codebase Proof & Interview Notes")
-            st.caption("Automated code search across your local repositories matching skills requested in this JD:")
-
-            proofs = st.session_state.get("jd_code_proofs", [])
-            if proofs:
-                st.success(f"Found code implementation evidence for {len(proofs)} JD requirements!")
-                for item in proofs:
-                    with st.expander(f"🔑 **{item.requirement}** — Implemented in `{item.project_name}`", expanded=True):
-                        st.markdown(f"**Location:** `{item.file_path}`")
-                        st.markdown("**Interview Talking Points (2-3 lines):**")
-                        st.info(item.interview_talking_points)
-                        st.markdown("**Implementation Snippet:**")
-                        st.code(item.code_snippet, language="python")
+    if not PUBLIC_MODE:
+        # --------------------------------------------------------------------------
+        # SUBTAB 2: GATED LOCAL CODEBASE PROOF
+        # --------------------------------------------------------------------------
+        with subtab_code_proofs:
+            if not st.session_state.analysis_completed:
+                st.warning("🔒 **Section Locked:** Please click **'Analyze Candidate'** above to run JD parsing and unlock implementation proofs from your 15 local projects.")
             else:
-                st.info("No direct matching code snippets found in local projects for these specific JD requirements.")
+                st.subheader("🎯 Local Codebase Proof & Interview Notes")
+                st.caption("Automated code search across your local repositories matching skills requested in this JD:")
+
+                proofs = st.session_state.get("jd_code_proofs", [])
+                if proofs:
+                    st.success(f"Found code implementation evidence for {len(proofs)} JD requirements!")
+                    for item in proofs:
+                        with st.expander(f"🔑 **{item.requirement}** — Implemented in `{item.project_name}`", expanded=True):
+                            st.markdown(f"**Location:** `{item.file_path}`")
+                            st.markdown("**Interview Talking Points (2-3 lines):**")
+                            st.info(item.interview_talking_points)
+                            st.markdown("**Implementation Snippet:**")
+                            st.code(item.code_snippet, language="python")
+                else:
+                    st.info("No direct matching code snippets found in local projects for these specific JD requirements.")
 
 # ==============================================================================
 # TAB 2: SKILL HUB & CONTENT GENERATOR STUDIO
@@ -425,11 +457,14 @@ with tab_skill_studio:
                 if parsed_res.roles:
                     st.session_state.parsed_candidate_roles = list(dict.fromkeys(parsed_res.roles + st.session_state.parsed_candidate_roles))
 
-                    # 1. Overwrite/Populate Categorized Skills in skills.json
+                if PUBLIC_MODE:
+                    # Session-only profile: re-parsing replaces it instead of piling up duplicates.
+                    for key in ("projects", "responsibilities", "misc"):
+                        reset_json_data(key)
+
+                # 1. Overwrite/Populate Categorized Skills in skills.json
                 if parsed_res.categorized_skills:
-                    skills_path = os.path.join("data", "skills.json")
-                    with open(skills_path, "w", encoding="utf-8") as f:
-                        json.dump([], f)
+                    reset_json_data("skills")
 
                     for cat_group in parsed_res.categorized_skills:
                         save_json_data("skills", cat_group.model_dump())
@@ -450,7 +485,19 @@ with tab_skill_studio:
                     save_json_data("misc", m.model_dump())
                     
                 st.session_state.resume_parsed = True
-                st.success("Successfully populated projects.json, skills.json, responsibilities.json, and misc.json!")
+                if PUBLIC_MODE:
+                    st.success("Profile populated for this session only. Nothing is stored on the server.")
+                else:
+                    st.success("Successfully populated projects.json, skills.json, responsibilities.json, and misc.json!")
+
+    if PUBLIC_MODE:
+        st.caption("🔒 Your profile data lives only in this browser session and is discarded when you close the tab.")
+        st.download_button(
+            "⬇️ Download my profile (JSON)",
+            data=export_profile_json(),
+            file_name="my_profile.json",
+            mime="application/json",
+        )
 
     subtab_ingest, subtab_studio = st.tabs(["📥 Context Ingestion Engine", "📤 Profile Output Studio"])
 
@@ -563,10 +610,6 @@ with tab_skill_studio:
                     raw_yaml_prompt = load_prompt("linkedin_prompts.yaml", "linkedin_summary_prompt")
                     
                     formatted_prompt = raw_yaml_prompt.format(
-                        years_exp=14,
-                        core_stack="React, Node.js, .NET, SQL",
-                        cloud_exp=5,
-                        cloud_platform="Azure",
                         context_json=json.dumps(context, indent=2)
                     )
                     
@@ -642,8 +685,8 @@ with tab_skill_studio:
                 elif output_type == "GitHub Profile README":
                     raw_yaml_prompt = load_prompt("github_prompts.yaml", "github_readme_prompt")
                     formatted_prompt = raw_yaml_prompt.format(
-                        candidate_name="Sathya Vakacharla",
-                        github_handle=github_username if github_username else "sathyalog",
+                        candidate_name=(st.session_state.get("final_analysis_state") or {}).get("candidate_name") or "the candidate",
+                        github_handle=github_username or "not provided",
                         context_json=json.dumps(context, indent=2)
                     )
                     
@@ -722,77 +765,78 @@ with tab_interview:
 # ==============================================================================
 # TAB 4: UNRESTRICTED LOCAL REPOSITORY KEYWORD SEARCH
 # ==============================================================================
-with tab_code_search:
-    st.title("🔍 Local Repository Keyword Search")
-    st.markdown(
-        "Search for specific technical concepts, algorithms, methods, or parameters "
-        "(e.g., `IVF`, `recall`, `HNSW`, `Pinecone`, `LangGraph`) across **all repositories** "
-        "indexed in your local codebase directory."
-    )
-
-    if not os.path.exists(DEFAULT_PROJECTS_DIR):
-        st.info("Local repository search only works when the app runs on your own machine; "
-                "the projects directory isn't available on this hosted deployment.")
-
-    # Search bar layout
-    col_input, col_btn = st.columns([5, 1])
-    with col_input:
-        search_query = st.text_input(
-            "Enter Keyword or Method Name",
-            placeholder="e.g., IVF, recall, CosineSimilarity, RAG",
-            key="local_repo_search_query",
-            label_visibility="collapsed"
+if not PUBLIC_MODE:
+    with tab_code_search:
+        st.title("🔍 Local Repository Keyword Search")
+        st.markdown(
+            "Search for specific technical concepts, algorithms, methods, or parameters "
+            "(e.g., `IVF`, `recall`, `HNSW`, `Pinecone`, `LangGraph`) across **all repositories** "
+            "indexed in your local codebase directory."
         )
-    with col_btn:
-        search_triggered = st.button("🔍 Search", type="primary", use_container_width=True)
 
-    if search_triggered:
-        if not search_query.strip():
-            st.warning("Please enter a valid keyword to search.")
-        else:
-            with st.spinner(f"Scanning all local repositories for '{search_query}'..."):
-                # Scans all available local repository folders
-                raw_matches = scan_local_projects(search_query.strip())
+        if not os.path.exists(DEFAULT_PROJECTS_DIR):
+            st.info("Local repository search only works when the app runs on your own machine; "
+                    "the projects directory isn't available on this hosted deployment.")
 
-                if "No code or README matches found" in raw_matches or "not found" in raw_matches:
-                    st.info(f"No occurrences of **'{search_query}'** were found across your local repositories.")
-                else:
-                    # Prompt designed to parse ALL repository occurrences
-                    search_analysis_prompt = f"""
-                    Exhaustively analyze all code and README matches found for the keyword '{search_query}' across ALL local repositories.
-                    
-                    Raw Matches Data:
-                    {raw_matches}
-                    
-                    Extract every match into a structured format:
-                    1. requirement: Set to '{search_query}'.
-                    2. project_name: Name of the repository/folder where the code exists.
-                    3. file_path: Relative file path containing the code.
-                    4. code_snippet: Exact matching code snippet or block.
-                    5. interview_talking_points: Exactly 2-3 lines explaining the technical logic, workflow, or architectural purpose of this code snippet.
-                    """
-                    
-                    try:
-                        structured_search_llm = llm.with_structured_output(JDCodeProofList)
-                        analyzed_results = structured_search_llm.invoke(search_analysis_prompt)
-                        matches = analyzed_results.proofs
-                    except Exception as e:
-                        matches = []
-                        st.error(f"Error parsing local repository results: {e}")
+        # Search bar layout
+        col_input, col_btn = st.columns([5, 1])
+        with col_input:
+            search_query = st.text_input(
+                "Enter Keyword or Method Name",
+                placeholder="e.g., IVF, recall, CosineSimilarity, RAG",
+                key="local_repo_search_query",
+                label_visibility="collapsed"
+            )
+        with col_btn:
+            search_triggered = st.button("🔍 Search", type="primary", use_container_width=True)
 
-                    if matches:
-                        st.success(f"Found **{len(matches)}** result(s) across your repositories for **'{search_query}'**!")
-                        st.divider()
+        if search_triggered:
+            if not search_query.strip():
+                st.warning("Please enter a valid keyword to search.")
+            else:
+                with st.spinner(f"Scanning all local repositories for '{search_query}'..."):
+                    # Scans all available local repository folders
+                    raw_matches = scan_local_projects(search_query.strip())
 
-                        for match in matches:
-                            with st.expander(f"📁 **Repository:** `{match.project_name}` | **File:** `{match.file_path}`", expanded=True):
-                                st.markdown("**Code Implementation:**")
-                                st.code(match.code_snippet, language="python")
-
-                                st.markdown("**Logical Workflow & Task Purpose:**")
-                                st.info(match.interview_talking_points)
+                    if "No code or README matches found" in raw_matches or "not found" in raw_matches:
+                        st.info(f"No occurrences of **'{search_query}'** were found across your local repositories.")
                     else:
-                        st.warning("Could not extract structured results from the repository matches.")
+                        # Prompt designed to parse ALL repository occurrences
+                        search_analysis_prompt = f"""
+                        Exhaustively analyze all code and README matches found for the keyword '{search_query}' across ALL local repositories.
+                    
+                        Raw Matches Data:
+                        {raw_matches}
+                    
+                        Extract every match into a structured format:
+                        1. requirement: Set to '{search_query}'.
+                        2. project_name: Name of the repository/folder where the code exists.
+                        3. file_path: Relative file path containing the code.
+                        4. code_snippet: Exact matching code snippet or block.
+                        5. interview_talking_points: Exactly 2-3 lines explaining the technical logic, workflow, or architectural purpose of this code snippet.
+                        """
+                    
+                        try:
+                            structured_search_llm = llm.with_structured_output(JDCodeProofList)
+                            analyzed_results = structured_search_llm.invoke(search_analysis_prompt)
+                            matches = analyzed_results.proofs
+                        except Exception as e:
+                            matches = []
+                            st.error(f"Error parsing local repository results: {e}")
+
+                        if matches:
+                            st.success(f"Found **{len(matches)}** result(s) across your repositories for **'{search_query}'**!")
+                            st.divider()
+
+                            for match in matches:
+                                with st.expander(f"📁 **Repository:** `{match.project_name}` | **File:** `{match.file_path}`", expanded=True):
+                                    st.markdown("**Code Implementation:**")
+                                    st.code(match.code_snippet, language="python")
+
+                                    st.markdown("**Logical Workflow & Task Purpose:**")
+                                    st.info(match.interview_talking_points)
+                        else:
+                            st.warning("Could not extract structured results from the repository matches.")
 
 # ==============================================================================
 # TAB 5: EVALUATION & ACCURACY
@@ -821,8 +865,9 @@ The LLM's only job is *extracting* `required_skills`, `candidate_skills`, and ex
     eval_col1, eval_col2 = st.columns([3, 1])
     with eval_col2:
         eval_mode = st.selectbox(
-            "Mode", ["logic", "e2e"], index=0,
-            help="logic = free, checks only the ShortList/Reject decision math. e2e = calls the configured LLM, checks real skill-extraction accuracy too.",
+            "Mode", ["logic"] if PUBLIC_MODE else ["logic", "e2e"], index=0,
+            help="logic = free, checks only the ShortList/Reject decision math. e2e = calls the configured LLM, checks real skill-extraction accuracy too."
+                 + (" (e2e is available when running the app locally.)" if PUBLIC_MODE else ""),
         )
         run_eval_clicked = st.button("▶️ Re-run evaluation now", type="primary")
 
@@ -830,15 +875,23 @@ The LLM's only job is *extracting* `required_skills`, `candidate_skills`, and ex
         with st.spinner(f"Running '{eval_mode}' evaluation against {DEFAULT_DATASET_PATH}..."):
             mode_reports = evaluate_dataset(DEFAULT_DATASET_PATH, [eval_mode])
             full_report = build_full_report(mode_reports, DEFAULT_DATASET_PATH)
-            os.makedirs("eval", exist_ok=True)
-            with open("eval/last_run.json", "w", encoding="utf-8") as f:
-                json.dump(full_report, f, indent=2)
-            with open("eval/last_run.html", "w", encoding="utf-8") as f:
-                f.write(render_html_report(mode_reports, DEFAULT_DATASET_PATH))
+            if not PUBLIC_MODE:
+                os.makedirs("eval", exist_ok=True)
+                with open("eval/last_run.json", "w", encoding="utf-8") as f:
+                    json.dump(full_report, f, indent=2)
+                with open("eval/last_run.html", "w", encoding="utf-8") as f:
+                    f.write(render_html_report(mode_reports, DEFAULT_DATASET_PATH))
             st.session_state.eval_full_report = full_report
-        st.success("Evaluation complete — eval/last_run.json and eval/last_run.html updated.")
+        if PUBLIC_MODE:
+            st.success("Evaluation complete — results shown below for this session.")
+        else:
+            st.success("Evaluation complete — eval/last_run.json and eval/last_run.html updated.")
 
-    full_report = st.session_state.get("eval_full_report") or load_full_report("eval/last_run.json")
+    full_report = (
+        st.session_state.get("eval_full_report")
+        or (None if PUBLIC_MODE else load_full_report("eval/last_run.json"))
+        or load_full_report(SHOWCASE_REPORT_PATH)
+    )
 
     if full_report:
         st.caption(f"Dataset: `{full_report['dataset']}` · Last generated: {full_report['generated_at']}")
@@ -863,15 +916,19 @@ The LLM's only job is *extracting* `required_skills`, `candidate_skills`, and ex
                 f"Exp:Reject→Pred:Reject={cm['exp_Reject_pred_Reject']}"
             )
             st.divider()
-        st.caption("Full report also saved to `eval/last_run.html` (open in a browser) and `eval/last_run.json`.")
+        if not PUBLIC_MODE:
+            st.caption("Full report also saved to `eval/last_run.html` (open in a browser) and `eval/last_run.json`.")
     else:
         st.info("No evaluation has been run yet. Click 'Re-run evaluation now' above, or run `uv run python evaluation.py --mode e2e` from the terminal.")
 
     st.divider()
     st.subheader("📝 Live Analysis Log")
-    st.caption("Every real 'Analyze Candidate' run in Tab 1 is recorded here. These have no ground truth yet — label one below to promote it into the golden set.")
-
-    live_runs = load_live_runs()
+    if PUBLIC_MODE:
+        st.caption("Every 'Analyze Candidate' run you make in Tab 1 during this browser session is listed here. "
+                   "🔒 Only your own runs are shown, and nothing is stored on the server.")
+    else:
+        st.caption("Every real 'Analyze Candidate' run in Tab 1 is recorded here. These have no ground truth yet — label one below to promote it into the golden set.")
+    live_runs = get_live_runs()
     if not live_runs:
         st.info("No analyses recorded yet. Run 'Analyze Candidate' in Tab 1 to populate this log.")
     else:
@@ -887,15 +944,16 @@ The LLM's only job is *extracting* `required_skills`, `candidate_skills`, and ex
                 st.write(f"**Candidate skills:** {', '.join(run.get('candidate_skills', [])) or '—'}")
                 st.write(f"**Experience:** {run.get('candidate_experience')} yrs (required: {run.get('experience_required')} yrs)")
 
-                with st.form(key=f"label_form_{run['run_id']}"):
-                    expected = st.radio(
-                        "What should the correct decision have been?",
-                        ["ShortList", "Reject"], horizontal=True, key=f"expected_{run['run_id']}",
-                    )
-                    label_notes = st.text_input("Why? (saved as the case's notes)", key=f"notes_{run['run_id']}")
-                    if st.form_submit_button("💾 Save as golden-set case"):
-                        ok, msg = save_live_run_as_gold_case(run, expected_decision=expected, notes=label_notes)
-                        if ok:
-                            st.success(msg)
-                        else:
-                            st.warning(msg)
+                if not PUBLIC_MODE:
+                    with st.form(key=f"label_form_{run['run_id']}"):
+                        expected = st.radio(
+                            "What should the correct decision have been?",
+                            ["ShortList", "Reject"], horizontal=True, key=f"expected_{run['run_id']}",
+                        )
+                        label_notes = st.text_input("Why? (saved as the case's notes)", key=f"notes_{run['run_id']}")
+                        if st.form_submit_button("💾 Save as golden-set case"):
+                            ok, msg = save_live_run_as_gold_case(run, expected_decision=expected, notes=label_notes)
+                            if ok:
+                                st.success(msg)
+                            else:
+                                st.warning(msg)

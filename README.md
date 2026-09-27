@@ -411,3 +411,16 @@ The LLM provider is chosen in `core/llm.py` via `LLM_PROVIDER` (`groq` or `anthr
 3. In **App settings → Secrets**, paste the keys from `.streamlit/secrets.toml.example` (at minimum `LLM_PROVIDER = "groq"` and `GROQ_API_KEY`).
 
 Optional keys (Pinecone, Apify, GitHub token) enable their features; without them those features are skipped. Local repo search only works when running on your own machine.
+
+### Public mode vs owner mode
+The hosted app runs in **public mode** automatically (set `APP_MODE` to override):
+- Each visitor's resume, Skill Hub profile, interview prep and analysis log live only in their browser session. **Nothing is written to the server disk or to this repo.** Visitors can download their profile as JSON.
+- Local Repo Search and Local Codebase Proof are hidden (they need the owner's machine).
+- Evaluation shows the committed `eval/showcase_report.json`. Visitors can re-run the free `logic` mode; `e2e` and golden-set labelling are owner-only.
+- If `GITHUB_PERSONAL_ACCESS_TOKEN` isn't set, visitors can paste their own token in the sidebar (session-only).
+
+On your own machine (where the local projects folder exists) the app runs in **owner mode**: `data/*.json` and `eval/*.json` are read and written as before. These files are git-ignored, so your personal data is never pushed. To refresh the public showcase report:
+
+```bash
+uv run python evaluation.py --mode all --json-out eval/showcase_report.json
+```

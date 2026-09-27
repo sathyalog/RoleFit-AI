@@ -12,3 +12,9 @@ wheels/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+
+# Personal profile & runtime data (owner mode only; never pushed)
+data/*.json
+eval/live_runs.json
+eval/last_run.json
+eval/last_run.html

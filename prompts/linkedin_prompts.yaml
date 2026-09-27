@@ -3,9 +3,9 @@ linkedin_summary_prompt: |
 
   Return a JSON object matching this exact format:
   {{
-    "headline": "AI Engineering Lead | LangGraph & Multi-Agent Systems Architect",
-    "about_section": "💼 𝗟𝗲𝗮𝗱 𝗔𝗜 𝗘𝗻𝗴𝗶𝗻𝗲𝗲𝗿\nI am a Technical Lead with {years_exp}+ years of experience...",
-    "featured_hashtags": ["AIEngineering", "LangGraph", "Azure", "AgenticAI"]
+    "headline": "<Role | Specialty | Specialty>",
+    "about_section": "<first-person About section, 3-5 short paragraphs grounded in the context>",
+    "featured_hashtags": ["<4-6 relevant hashtags without the # symbol>"]
   }}
 
   Candidate Context JSON:

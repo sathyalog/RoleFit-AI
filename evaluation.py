@@ -57,6 +57,8 @@ from core.screening import CheckCriteria, build_structured_model, compute_skill_
 
 DEFAULT_DATASET_PATH = "eval/gold_dataset.json"
 LIVE_RUNS_PATH = "eval/live_runs.json"
+# Committed golden-set report shown on the hosted (public mode) Evaluation tab.
+SHOWCASE_REPORT_PATH = "eval/showcase_report.json"
 
 
 @dataclass
