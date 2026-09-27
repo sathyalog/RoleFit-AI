@@ -10,7 +10,6 @@ from pypdf import PdfReader
 from dotenv import load_dotenv
 
 # LangGraph & LangChain Imports
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
@@ -25,7 +24,8 @@ from firecrawl_scraping import extract_jd_from_url
 
 # Import Centralized Storage Functions & Clean Schemas
 from core.storage import load_json_data, save_json_data
-from mcp_codebase import scan_local_projects
+from core.llm import get_llm
+from mcp_codebase import scan_local_projects, DEFAULT_PROJECTS_DIR
 from core.schemas import JDCodeProofList
 # from core.storage import load_json_data, save_json_data, JSON_FILES
 from core.schemas import (
@@ -83,11 +83,7 @@ st.set_page_config(
     layout="wide",
 )
 
-llm = ChatAnthropic(
-    model="claude-haiku-4-5-20251001",
-    temperature=0,
-    max_tokens=2500,
-)
+llm = get_llm(max_tokens=2500)
 
 extracted_resume_text = ""
 github_username = None
@@ -709,6 +705,10 @@ with tab_code_search:
         "indexed in your local codebase directory."
     )
 
+    if not os.path.exists(DEFAULT_PROJECTS_DIR):
+        st.info("Local repository search only works when the app runs on your own machine; "
+                "the projects directory isn't available on this hosted deployment.")
+
     # Search bar layout
     col_input, col_btn = st.columns([5, 1])
     with col_input:
@@ -797,7 +797,7 @@ The LLM's only job is *extracting* `required_skills`, `candidate_skills`, and ex
     with eval_col2:
         eval_mode = st.selectbox(
             "Mode", ["logic", "e2e"], index=0,
-            help="logic = free, checks only the ShortList/Reject decision math. e2e = calls Claude, checks real skill-extraction accuracy too.",
+            help="logic = free, checks only the ShortList/Reject decision math. e2e = calls the configured LLM, checks real skill-extraction accuracy too.",
         )
         run_eval_clicked = st.button("▶️ Re-run evaluation now", type="primary")
 

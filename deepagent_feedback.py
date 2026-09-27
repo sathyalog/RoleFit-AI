@@ -1,14 +1,10 @@
 from typing import Dict, Any
 from langsmith import traceable
-from langchain_anthropic import ChatAnthropic
+from core.llm import get_llm
 from pydantic import BaseModel, Field
 
 # 1. Initialize LLM with a valid model and sufficient max_tokens
-feedback_llm = ChatAnthropic(
-    model="claude-haiku-4-5-20251001",  # Active low-cost Haiku model
-    temperature=0,
-    max_tokens=1000
-)
+feedback_llm = get_llm(max_tokens=1000)
 
 # 2. Pydantic schemas with safe defaults to prevent ValidationErrors
 class FeedbackOutput(BaseModel):

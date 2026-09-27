@@ -9,8 +9,21 @@ index_name = "resume-analyser"
 
 @st.cache_resource
 def get_pinecone_index():
-    """Initializes Pinecone once and caches the index object across Streamlit rerenders."""
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+    """Initializes Pinecone once and caches the index object across Streamlit rerenders.
+    Returns None when PINECONE_API_KEY is missing or Pinecone is unreachable."""
+    api_key = os.getenv("PINECONE_API_KEY")
+    if not api_key:
+        print("PINECONE_API_KEY not set; skipping Pinecone.")
+        return None
+    try:
+        return _connect_index(api_key)
+    except Exception as e:
+        print(f"Pinecone unavailable: {e}")
+        return None
+
+
+def _connect_index(api_key: str):
+    pc = Pinecone(api_key=api_key)
 
     if not pc.has_index(index_name):
         print(f"Creating index {index_name}..")

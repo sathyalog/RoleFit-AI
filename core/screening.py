@@ -8,13 +8,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
 from langsmith import traceable
 
+from core.llm import get_llm
 from core.schemas import ScreeningModel
 
-DEFAULT_SCREENING_MODEL_NAME = "claude-haiku-4-5-20251001"
 
 
 class ScreeningState(TypedDict, total=False):
@@ -38,12 +37,12 @@ class ScreeningState(TypedDict, total=False):
 
 
 def build_structured_model(llm: Optional[BaseChatModel] = None):
-    """Wrap (or lazily create) a ChatAnthropic client with ScreeningModel
+    """Wrap (or lazily create) a chat model client with ScreeningModel
     structured output. main.py passes its existing shared `llm`; evaluation.py
     calls this with no args to build its own client — keeping model/temperature/
     max_tokens config defined in exactly one place."""
     if llm is None:
-        llm = ChatAnthropic(model=DEFAULT_SCREENING_MODEL_NAME, temperature=0, max_tokens=2500)
+        llm = get_llm(max_tokens=2500)
     return llm.with_structured_output(ScreeningModel)
 
 

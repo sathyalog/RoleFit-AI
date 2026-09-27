@@ -401,3 +401,13 @@ The Streamlit app itself now has a 5th tab, **"📊 Evaluation & Accuracy"**, so
 - **`eval/last_run.html`**: an HTML report you can open directly in a browser (`open eval/last_run.html` on macOS) — color-codes each case green (correct) or red (mismatch), and shows the same decision-accuracy and extraction-quality breakdown as the terminal output, per mode run.
 
 A concrete example from a real `--mode e2e` run: the harness caught that Claude extracted "AWS Lambda" from a resume where the gold label was "AWS" — since matching is exact-string, that counted as both a missed skill and an extra one, dragging `candidate_skills` recall down to 0.60 for that case. That's the kind of specific, falsifiable finding a self-grading LLM judge would likely have glossed over as "close enough."
+
+## Deploy free on Streamlit Community Cloud
+
+The LLM provider is chosen in `core/llm.py` via `LLM_PROVIDER` (`groq` or `anthropic`). Groq has a free tier, so the hosted app costs $0.
+
+1. Get a free key at https://console.groq.com/keys.
+2. On https://share.streamlit.io create an app from this repo, main file `main.py`, Python 3.13.
+3. In **App settings → Secrets**, paste the keys from `.streamlit/secrets.toml.example` (at minimum `LLM_PROVIDER = "groq"` and `GROQ_API_KEY`).
+
+Optional keys (Pinecone, Apify, GitHub token) enable their features; without them those features are skipped. Local repo search only works when running on your own machine.

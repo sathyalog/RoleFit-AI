@@ -14,9 +14,9 @@ Modes:
       NOT of LLM extraction quality (since inputs ARE the gold skills, skill
       P/R/F1 is trivially 1.0 here by construction).
   --mode e2e: for each gold case, calls the REAL extract_screening_output()
-      (Claude Haiku) on gold resume_text/job_description, then scores the
+      (configured LLM, see core/llm.py) on gold resume_text/job_description, then scores the
       LLM's extracted skills against gold labels, and runs the real
-      CheckCriteria on the LLM-derived numbers. Requires ANTHROPIC_API_KEY.
+      CheckCriteria on the LLM-derived numbers. Requires GROQ_API_KEY or ANTHROPIC_API_KEY.
   --mode all: runs both and prints both reports.
 
   --self-test: runs a built-in rigged case with a deliberately WRONG
@@ -331,7 +331,7 @@ def save_live_run_as_gold_case(
 
 def print_report(results: List[CaseResult], summary: dict, mode: str, dataset_path: str, verbose: bool = False) -> None:
     print("=== Resume/JD Screening Evaluation ===")
-    cost_note = "NO LLM calls, $0 cost" if mode == "logic" else "calls the real Claude model"
+    cost_note = "NO LLM calls, $0 cost" if mode == "logic" else "calls the real LLM"
     print(f"Dataset: {dataset_path} ({len(results)} cases)")
     print(f"Mode: {mode} ({cost_note})\n")
 
@@ -377,7 +377,7 @@ def render_html_report(mode_reports: List[tuple], dataset_path: str) -> str:
 
     sections = []
     for mode, results, summary in mode_reports:
-        cost_note = "NO LLM calls, $0 cost" if mode == "logic" else "calls the real Claude model"
+        cost_note = "NO LLM calls, $0 cost" if mode == "logic" else "calls the real LLM"
         rows = []
         for r in results:
             if r.error:

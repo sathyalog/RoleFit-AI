@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 from typing import Any, Dict, List
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -233,6 +234,11 @@ async def FetchGitHubMCPData(state: Dict[str, Any]) -> Dict[str, Any]:
             "transport": "stdio",
         }
     }
+
+    if not shutil.which("npx"):
+        return {
+            "github_mcp_output": "GitHub analysis skipped: Node.js (npx) is not installed on this server."
+        }
 
     try:
         client = MultiServerMCPClient(mcp_config)
