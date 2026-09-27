@@ -61,11 +61,6 @@ def reset_json_data(file_key: str):
         json.dump([], f)
 
 
-def export_profile_json() -> str:
-    """All profile entries as one JSON document, for the visitor to download."""
-    return json.dumps({key: load_json_data(key) for key in FILES}, indent=2)
-
-
 def sync_to_vector_db(index_obj, doc_id: str, text_content: str, metadata: dict):
     """Placeholder vector update: generates mock sparse/dense vectors or upserts text chunks into Pinecone."""
     if index_obj:

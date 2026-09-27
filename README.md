@@ -414,7 +414,7 @@ Optional keys (Pinecone, Apify, GitHub token) enable their features; without the
 
 ### Public mode vs owner mode
 The hosted app runs in **public mode** automatically (set `APP_MODE` to override):
-- Each visitor's resume, Skill Hub profile, interview prep and analysis log live only in their browser session. **Nothing is written to the server disk or to this repo.** Visitors can download their profile as JSON.
+- Each visitor's resume, Skill Hub profile, interview prep and analysis log live only in their browser session. **Nothing is written to the server disk or to this repo.**
 - Local Repo Search and Local Codebase Proof are hidden (they need the owner's machine).
 - Evaluation shows the committed `eval/showcase_report.json`. Visitors can re-run the free `logic` mode; `e2e` and golden-set labelling are owner-only.
 - If `GITHUB_PERSONAL_ACCESS_TOKEN` isn't set, visitors can paste their own token in the sidebar (session-only).

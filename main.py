@@ -23,7 +23,7 @@ from PII_detection import redact_pii_presidio
 from firecrawl_scraping import extract_jd_from_url
 
 # Import Centralized Storage Functions & Clean Schemas
-from core.storage import load_json_data, save_json_data, reset_json_data, export_profile_json
+from core.storage import load_json_data, save_json_data, reset_json_data
 from core.app_mode import is_public_mode
 from core.llm import get_llm
 from mcp_codebase import scan_local_projects, DEFAULT_PROJECTS_DIR
@@ -492,12 +492,6 @@ with tab_skill_studio:
 
     if PUBLIC_MODE:
         st.caption("🔒 Your profile data lives only in this browser session and is discarded when you close the tab.")
-        st.download_button(
-            "⬇️ Download my profile (JSON)",
-            data=export_profile_json(),
-            file_name="my_profile.json",
-            mime="application/json",
-        )
 
     subtab_ingest, subtab_studio = st.tabs(["📥 Context Ingestion Engine", "📤 Profile Output Studio"])
 
