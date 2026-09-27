@@ -156,13 +156,12 @@ with st.sidebar:
 
 # TOP-LEVEL NAVBAR NAVIGATION TABS
 if PUBLIC_MODE:
-    tab_analyser, tab_skill_studio, tab_interview, tab_evaluation = st.tabs([
+    tab_analyser, tab_interview, tab_evaluation = st.tabs([
         "📄 Resume Analyser",
-        "✍️ Skill Hub & Content Studio",
         "🎯 AI Interview Copilot",
         "📊 Evaluation & Accuracy",
     ])
-    tab_code_search = None
+    tab_skill_studio = tab_code_search = None
 else:
     tab_analyser, tab_skill_studio, tab_interview, tab_code_search, tab_evaluation = st.tabs([
         "📄 Resume Analyser",
@@ -431,277 +430,267 @@ with tab_analyser:
 # ==============================================================================
 # TAB 2: SKILL HUB & CONTENT GENERATOR STUDIO
 # ==============================================================================
-with tab_skill_studio:
-    st.title("✍️ Skill Hub & Content Studio")
-    st.caption("Update your central experience store and generate custom profile markdown across formats.")
+if not PUBLIC_MODE:
+    with tab_skill_studio:
+        st.title("✍️ Skill Hub & Content Studio")
+        st.caption("Update your central experience store and generate custom profile markdown across formats.")
     
-    if extracted_resume_text:
-        if st.button("⚡ Auto-Populate JSONs from Uploaded Resume", type="secondary"):
-            with st.spinner("Extracting projects, certifications, categorized skills, and responsibilities..."):
-                auto_parser = llm.with_structured_output(ResumeAutoParseModel)
+        if extracted_resume_text:
+            if st.button("⚡ Auto-Populate JSONs from Uploaded Resume", type="secondary"):
+                with st.spinner("Extracting projects, certifications, categorized skills, and responsibilities..."):
+                    auto_parser = llm.with_structured_output(ResumeAutoParseModel)
                 
-                system_prompt = (
-                    "Exhaustively parse the candidate resume text.\n"
-                    "Extract:\n"
-                    "1. roles: List of job title strings.\n"
-                    "2. categorized_skills: Group skills under explicit resume categories (e.g., 'Agentic AI & Orchestration', 'Vector Search & Advanced RAG', 'Guardrails & Governance', 'Backend & Systems', 'Frontend').\n"
-                    "3. projects: List of objects containing project_name, tech_stack, description.\n"
-                    "4. responsibilities: List of objects containing role_title and responsibilities array.\n"
-                    "5. misc: List of objects containing category (Certifications, Courses, etc.) and content."
-                )
+                    system_prompt = (
+                        "Exhaustively parse the candidate resume text.\n"
+                        "Extract:\n"
+                        "1. roles: List of job title strings.\n"
+                        "2. categorized_skills: Group skills under explicit resume categories (e.g., 'Agentic AI & Orchestration', 'Vector Search & Advanced RAG', 'Guardrails & Governance', 'Backend & Systems', 'Frontend').\n"
+                        "3. projects: List of objects containing project_name, tech_stack, description.\n"
+                        "4. responsibilities: List of objects containing role_title and responsibilities array.\n"
+                        "5. misc: List of objects containing category (Certifications, Courses, etc.) and content."
+                    )
                 
-                parsed_res: ResumeAutoParseModel = auto_parser.invoke(
-                    f"{system_prompt}\n\nResume Text:\n{extracted_resume_text}"
-                )
+                    parsed_res: ResumeAutoParseModel = auto_parser.invoke(
+                        f"{system_prompt}\n\nResume Text:\n{extracted_resume_text}"
+                    )
                 
-                if parsed_res.roles:
-                    st.session_state.parsed_candidate_roles = list(dict.fromkeys(parsed_res.roles + st.session_state.parsed_candidate_roles))
+                    if parsed_res.roles:
+                        st.session_state.parsed_candidate_roles = list(dict.fromkeys(parsed_res.roles + st.session_state.parsed_candidate_roles))
 
-                if PUBLIC_MODE:
-                    # Session-only profile: re-parsing replaces it instead of piling up duplicates.
-                    for key in ("projects", "responsibilities", "misc"):
-                        reset_json_data(key)
+                    # 1. Overwrite/Populate Categorized Skills in skills.json
+                    if parsed_res.categorized_skills:
+                        reset_json_data("skills")
 
-                # 1. Overwrite/Populate Categorized Skills in skills.json
-                if parsed_res.categorized_skills:
-                    reset_json_data("skills")
+                        for cat_group in parsed_res.categorized_skills:
+                            save_json_data("skills", cat_group.model_dump())
 
-                    for cat_group in parsed_res.categorized_skills:
-                        save_json_data("skills", cat_group.model_dump())
+                    # 2. Populate projects.json
+                    for proj in parsed_res.projects:
+                        save_json_data("projects", proj.model_dump())
 
-                # 2. Populate projects.json
-                for proj in parsed_res.projects:
-                    save_json_data("projects", proj.model_dump())
+                    # 3. Populate responsibilities.json
+                    for resp in parsed_res.responsibilities:
+                        save_json_data("responsibilities", {
+                            "context_title": resp.role_title if resp.role_title else "General Experience",
+                            "responsibilities": resp.responsibilities
+                        })
 
-                # 3. Populate responsibilities.json
-                for resp in parsed_res.responsibilities:
-                    save_json_data("responsibilities", {
-                        "context_title": resp.role_title if resp.role_title else "General Experience",
-                        "responsibilities": resp.responsibilities
-                    })
-
-                # 4. Populate misc.json
-                for m in parsed_res.misc:
-                    save_json_data("misc", m.model_dump())
+                    # 4. Populate misc.json
+                    for m in parsed_res.misc:
+                        save_json_data("misc", m.model_dump())
                     
-                st.session_state.resume_parsed = True
-                if PUBLIC_MODE:
-                    st.success("Profile populated for this session only. Nothing is stored on the server.")
-                else:
+                    st.session_state.resume_parsed = True
                     st.success("Successfully populated projects.json, skills.json, responsibilities.json, and misc.json!")
 
-    if PUBLIC_MODE:
-        st.caption("🔒 Your profile data lives only in this browser session and is discarded when you close the tab.")
+        subtab_ingest, subtab_studio = st.tabs(["📥 Context Ingestion Engine", "📤 Profile Output Studio"])
 
-    subtab_ingest, subtab_studio = st.tabs(["📥 Context Ingestion Engine", "📤 Profile Output Studio"])
+        with subtab_ingest:
+            col_proj, col_chal = st.columns(2)
 
-    with subtab_ingest:
-        col_proj, col_chal = st.columns(2)
-
-        with col_proj:
-            st.subheader("🛠️ Projects & Tech Stacks (`projects.json` and `skills.json`)")
-            with st.form("form_projects"):
-                p_name = st.text_input("Project Name / Ecosystem")
-                p_tech = st.text_input("Tech Stack (comma separated)")
-                p_desc = st.text_area("Detailed Architecture Description")
+            with col_proj:
+                st.subheader("🛠️ Projects & Tech Stacks (`projects.json` and `skills.json`)")
+                with st.form("form_projects"):
+                    p_name = st.text_input("Project Name / Ecosystem")
+                    p_tech = st.text_input("Tech Stack (comma separated)")
+                    p_desc = st.text_area("Detailed Architecture Description")
                 
-                if st.form_submit_button("Save Project & Skills"):
-                    parsed_skills = [t.strip() for t in p_tech.split(",") if t.strip()]
+                    if st.form_submit_button("Save Project & Skills"):
+                        parsed_skills = [t.strip() for t in p_tech.split(",") if t.strip()]
                     
-                    save_json_data("projects", {
-                        "project_name": p_name, 
-                        "tech_stack": parsed_skills, 
-                        "description": p_desc
-                    })
+                        save_json_data("projects", {
+                            "project_name": p_name, 
+                            "tech_stack": parsed_skills, 
+                            "description": p_desc
+                        })
                     
-                    save_json_data("skills", {
-                        "category": f"Project Stack ({p_name})",
-                        "skills": parsed_skills
-                    })
+                        save_json_data("skills", {
+                            "category": f"Project Stack ({p_name})",
+                            "skills": parsed_skills
+                        })
 
-                    st.success(f"Saved {p_name} to projects.json and updated skills.json!")
+                        st.success(f"Saved {p_name} to projects.json and updated skills.json!")
 
-        with col_chal:
-            st.subheader("🧩 Engineering Challenges (`challenges.json`)")
-            with st.form("form_challenges"):
-                raw_challenge_input = st.text_area(
-                    "Describe your technical challenge in plain English:",
-                    placeholder="e.g., We had severe database locks during peak sale hours due to poorly indexed queries. I optimized indexes and added Redis caching, dropping latency by 60%.",
-                    height=180
-                )
+            with col_chal:
+                st.subheader("🧩 Engineering Challenges (`challenges.json`)")
+                with st.form("form_challenges"):
+                    raw_challenge_input = st.text_area(
+                        "Describe your technical challenge in plain English:",
+                        placeholder="e.g., We had severe database locks during peak sale hours due to poorly indexed queries. I optimized indexes and added Redis caching, dropping latency by 60%.",
+                        height=180
+                    )
                 
-                if st.form_submit_button("Format with LLM & Save to challenges.json"):
-                    if raw_challenge_input.strip():
-                        with st.spinner("Structuring challenge into STAR format via LLM..."):
-                            challenge_structurer = llm.with_structured_output(ChallengeEntry)
-                            parsed_ch: ChallengeEntry = challenge_structurer.invoke(
-                                f"Convert this raw engineering incident explanation into a structured STAR format with a title, scenario, solution, and impact:\n{raw_challenge_input}"
-                            )
+                    if st.form_submit_button("Format with LLM & Save to challenges.json"):
+                        if raw_challenge_input.strip():
+                            with st.spinner("Structuring challenge into STAR format via LLM..."):
+                                challenge_structurer = llm.with_structured_output(ChallengeEntry)
+                                parsed_ch: ChallengeEntry = challenge_structurer.invoke(
+                                    f"Convert this raw engineering incident explanation into a structured STAR format with a title, scenario, solution, and impact:\n{raw_challenge_input}"
+                                )
                             
-                            save_json_data("challenges", parsed_ch.model_dump())
-                            st.success(f"Formatted and saved challenge: '{parsed_ch.title}'!")
-                    else:
-                        st.warning("Please provide a description of the challenge.")
+                                save_json_data("challenges", parsed_ch.model_dump())
+                                st.success(f"Formatted and saved challenge: '{parsed_ch.title}'!")
+                        else:
+                            st.warning("Please provide a description of the challenge.")
 
-        st.divider()
-        col_resp, col_misc = st.columns(2)
+            st.divider()
+            col_resp, col_misc = st.columns(2)
 
-        with col_resp:
-            st.subheader("📋 Day-to-Day Responsibilities (`responsibilities.json`)")
-            with st.form("form_responsibilities"):
-                selected_role = st.selectbox(
-                    "Select Role / Context Title (Detected from Resume):", 
-                    options=st.session_state.parsed_candidate_roles
-                )
-                r_items = st.text_area(
-                    "Day-to-Day Responsibilities (one per line)", 
-                    placeholder="Managed CI/CD deployments\nLed daily standups and code reviews\nOptimized PostgreSQL database queries", 
-                    height=150
-                )
+            with col_resp:
+                st.subheader("📋 Day-to-Day Responsibilities (`responsibilities.json`)")
+                with st.form("form_responsibilities"):
+                    selected_role = st.selectbox(
+                        "Select Role / Context Title (Detected from Resume):", 
+                        options=st.session_state.parsed_candidate_roles
+                    )
+                    r_items = st.text_area(
+                        "Day-to-Day Responsibilities (one per line)", 
+                        placeholder="Managed CI/CD deployments\nLed daily standups and code reviews\nOptimized PostgreSQL database queries", 
+                        height=150
+                    )
                 
-                if st.form_submit_button("Save to responsibilities.json"):
-                    parsed_responsibilities = [r.strip() for r in r_items.split("\n") if r.strip()]
-                    save_json_data("responsibilities", {
-                        "context_title": selected_role,
-                        "responsibilities": parsed_responsibilities
-                    })
-                    st.success(f"Saved responsibilities for '{selected_role}' to responsibilities.json!")
+                    if st.form_submit_button("Save to responsibilities.json"):
+                        parsed_responsibilities = [r.strip() for r in r_items.split("\n") if r.strip()]
+                        save_json_data("responsibilities", {
+                            "context_title": selected_role,
+                            "responsibilities": parsed_responsibilities
+                        })
+                        st.success(f"Saved responsibilities for '{selected_role}' to responsibilities.json!")
 
-        with col_misc:
-            st.subheader("📝 Miscellaneous Credentials (`misc.json`)")
-            with st.form("form_misc"):
-                m_cat = st.selectbox(
-                    "Category", 
-                    ["Certifications", "Courses Learned", "Leadership & Mentorship", "Patents / Publications", "Other"]
-                )
-                m_content = st.text_area("Credential / Milestone Details")
-                if st.form_submit_button("Save to misc.json"):
-                    save_json_data("misc", {"category": m_cat, "content": m_content})
-                    st.success("Saved entry to misc.json!")
-
-    with subtab_studio:
-        st.subheader("Target Profile Formatter")
-        output_type = st.selectbox("Select Target Format", ["ATS Resume Content", "LinkedIn Summary", "GitHub Profile README"])
-
-        has_skills = len(load_json_data("skills")) > 0
-        has_projects = len(load_json_data("projects")) > 0
-        resume_is_parsed = st.session_state.get("resume_parsed", False) or has_skills or has_projects
-
-        if not resume_is_parsed:
-            st.warning("⚠️ Please upload a resume or auto-populate JSONs before generating profile outputs.")
-
-        if st.button("Generate Formatted Output", type="primary", disabled=not resume_is_parsed):
-            context = {
-                "skills": load_json_data("skills"),
-                "projects": load_json_data("projects"),
-                "responsibilities": load_json_data("responsibilities"),
-                "challenges": load_json_data("challenges"),
-                "misc": load_json_data("misc")
-            }
-
-            with st.spinner("Generating target layout..."):
-                if output_type == "LinkedIn Summary":
-                    raw_yaml_prompt = load_prompt("linkedin_prompts.yaml", "linkedin_summary_prompt")
-                    
-                    formatted_prompt = raw_yaml_prompt.format(
-                        context_json=json.dumps(context, indent=2)
+            with col_misc:
+                st.subheader("📝 Miscellaneous Credentials (`misc.json`)")
+                with st.form("form_misc"):
+                    m_cat = st.selectbox(
+                        "Category", 
+                        ["Certifications", "Courses Learned", "Leadership & Mentorship", "Patents / Publications", "Other"]
                     )
+                    m_content = st.text_area("Credential / Milestone Details")
+                    if st.form_submit_button("Save to misc.json"):
+                        save_json_data("misc", {"category": m_cat, "content": m_content})
+                        st.success("Saved entry to misc.json!")
+
+        with subtab_studio:
+            st.subheader("Target Profile Formatter")
+            output_type = st.selectbox("Select Target Format", ["ATS Resume Content", "LinkedIn Summary", "GitHub Profile README"])
+
+            has_skills = len(load_json_data("skills")) > 0
+            has_projects = len(load_json_data("projects")) > 0
+            resume_is_parsed = st.session_state.get("resume_parsed", False) or has_skills or has_projects
+
+            if not resume_is_parsed:
+                st.warning("⚠️ Please upload a resume or auto-populate JSONs before generating profile outputs.")
+
+            if st.button("Generate Formatted Output", type="primary", disabled=not resume_is_parsed):
+                context = {
+                    "skills": load_json_data("skills"),
+                    "projects": load_json_data("projects"),
+                    "responsibilities": load_json_data("responsibilities"),
+                    "challenges": load_json_data("challenges"),
+                    "misc": load_json_data("misc")
+                }
+
+                with st.spinner("Generating target layout..."):
+                    if output_type == "LinkedIn Summary":
+                        raw_yaml_prompt = load_prompt("linkedin_prompts.yaml", "linkedin_summary_prompt")
                     
-                    system_instruction = (
-                        "You are an executive LinkedIn profile writer. "
-                        "You MUST respond ONLY with a valid JSON object containing 3 keys: "
-                        '"headline", "about_section", and "featured_hashtags". '
-                        "Do NOT include markdown wrapping outside the JSON."
-                    )
+                        formatted_prompt = raw_yaml_prompt.format(
+                            context_json=json.dumps(context, indent=2)
+                        )
                     
-                    try:
-                        raw_response = llm.invoke([
-                            SystemMessage(content=system_instruction),
-                            HumanMessage(content=formatted_prompt)
-                        ])
+                        system_instruction = (
+                            "You are an executive LinkedIn profile writer. "
+                            "You MUST respond ONLY with a valid JSON object containing 3 keys: "
+                            '"headline", "about_section", and "featured_hashtags". '
+                            "Do NOT include markdown wrapping outside the JSON."
+                        )
+                    
+                        try:
+                            raw_response = llm.invoke([
+                                SystemMessage(content=system_instruction),
+                                HumanMessage(content=formatted_prompt)
+                            ])
                         
-                        raw_text = raw_response.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-                        parsed = json.loads(raw_text)
-                        headline_text = parsed.get("headline", "")
-                        about_text = parsed.get("about_section", "")
-                        hashtags_list = parsed.get("featured_hashtags", [])
+                            raw_text = raw_response.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                            parsed = json.loads(raw_text)
+                            headline_text = parsed.get("headline", "")
+                            about_text = parsed.get("about_section", "")
+                            hashtags_list = parsed.get("featured_hashtags", [])
                         
-                    except Exception:
-                        headline_text = ""
-                        about_text = raw_response.content.strip()
-                        hashtags_list = []
+                        except Exception:
+                            headline_text = ""
+                            about_text = raw_response.content.strip()
+                            hashtags_list = []
 
-                    about_text = about_text.replace("\\n", "\n").strip()
+                        about_text = about_text.replace("\\n", "\n").strip()
 
-                    if headline_text:
-                        st.markdown(f"**Headline:** `{headline_text}`")
+                        if headline_text:
+                            st.markdown(f"**Headline:** `{headline_text}`")
                     
-                    st.markdown("### LinkedIn About Section")
-                    if about_text:
-                        st.caption("Click the copy button in the top right corner of the block below to copy your summary:")
-                        st.code(about_text, language="markdown")
-                    else:
-                        st.error("Could not generate summary. Please click 'Auto-Populate JSONs' above and try again.")
+                        st.markdown("### LinkedIn About Section")
+                        if about_text:
+                            st.caption("Click the copy button in the top right corner of the block below to copy your summary:")
+                            st.code(about_text, language="markdown")
+                        else:
+                            st.error("Could not generate summary. Please click 'Auto-Populate JSONs' above and try again.")
 
-                    if hashtags_list:
-                        formatted_tags = " ".join([f"#{t.replace('#', '').strip()}" for t in hashtags_list if t.strip()])
-                        st.write(f"**Hashtags:** {formatted_tags}")
+                        if hashtags_list:
+                            formatted_tags = " ".join([f"#{t.replace('#', '').strip()}" for t in hashtags_list if t.strip()])
+                            st.write(f"**Hashtags:** {formatted_tags}")
 
-                elif output_type == "ATS Resume Content":
-                    raw_yaml_prompt = load_prompt("resume_prompts.yaml", "resume_content_prompt")
-                    formatted_prompt = raw_yaml_prompt.format(context_json=json.dumps(context, indent=2))
+                    elif output_type == "ATS Resume Content":
+                        raw_yaml_prompt = load_prompt("resume_prompts.yaml", "resume_content_prompt")
+                        formatted_prompt = raw_yaml_prompt.format(context_json=json.dumps(context, indent=2))
                     
-                    try:
-                        raw_response = llm.invoke([
-                            SystemMessage(content='Respond ONLY with valid JSON containing keys: "professional_summary", "highlighted_bullets", and "technical_skills_formatted".'),
-                            HumanMessage(content=formatted_prompt)
-                        ])
-                        raw_text = raw_response.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-                        parsed = json.loads(raw_text)
-                        prof_summary = parsed.get("professional_summary", "")
-                        bullets = parsed.get("highlighted_bullets", [])
-                        skills_block = parsed.get("technical_skills_formatted", "")
-                    except Exception:
-                        prof_summary = raw_response.content.strip()
-                        bullets = []
-                        skills_block = ""
+                        try:
+                            raw_response = llm.invoke([
+                                SystemMessage(content='Respond ONLY with valid JSON containing keys: "professional_summary", "highlighted_bullets", and "technical_skills_formatted".'),
+                                HumanMessage(content=formatted_prompt)
+                            ])
+                            raw_text = raw_response.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                            parsed = json.loads(raw_text)
+                            prof_summary = parsed.get("professional_summary", "")
+                            bullets = parsed.get("highlighted_bullets", [])
+                            skills_block = parsed.get("technical_skills_formatted", "")
+                        except Exception:
+                            prof_summary = raw_response.content.strip()
+                            bullets = []
+                            skills_block = ""
 
-                    st.markdown("### Professional Summary")
-                    st.write(prof_summary)
-                    if bullets:
-                        st.markdown("### Highlighted Bullet Points")
-                        for bullet in bullets:
-                            st.markdown(f"* {bullet}")
-                    if skills_block:
-                        st.markdown("### Technical Skills Block")
-                        st.code(skills_block, language="markdown")
+                        st.markdown("### Professional Summary")
+                        st.write(prof_summary)
+                        if bullets:
+                            st.markdown("### Highlighted Bullet Points")
+                            for bullet in bullets:
+                                st.markdown(f"* {bullet}")
+                        if skills_block:
+                            st.markdown("### Technical Skills Block")
+                            st.code(skills_block, language="markdown")
 
-                elif output_type == "GitHub Profile README":
-                    raw_yaml_prompt = load_prompt("github_prompts.yaml", "github_readme_prompt")
-                    formatted_prompt = raw_yaml_prompt.format(
-                        candidate_name=(st.session_state.get("final_analysis_state") or {}).get("candidate_name") or "the candidate",
-                        github_handle=github_username or "not provided",
-                        context_json=json.dumps(context, indent=2)
-                    )
+                    elif output_type == "GitHub Profile README":
+                        raw_yaml_prompt = load_prompt("github_prompts.yaml", "github_readme_prompt")
+                        formatted_prompt = raw_yaml_prompt.format(
+                            candidate_name=(st.session_state.get("final_analysis_state") or {}).get("candidate_name") or "the candidate",
+                            github_handle=github_username or "not provided",
+                            context_json=json.dumps(context, indent=2)
+                        )
                     
-                    try:
-                        raw_response = llm.invoke([
-                            SystemMessage(content='Respond ONLY with a valid JSON object containing the key "markdown_readme".'),
-                            HumanMessage(content=formatted_prompt)
-                        ])
-                        raw_text = raw_response.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-                        parsed = json.loads(raw_text)
-                        readme_md = parsed.get("markdown_readme", "")
-                    except Exception:
-                        readme_md = raw_response.content.strip()
+                        try:
+                            raw_response = llm.invoke([
+                                SystemMessage(content='Respond ONLY with a valid JSON object containing the key "markdown_readme".'),
+                                HumanMessage(content=formatted_prompt)
+                            ])
+                            raw_text = raw_response.content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                            parsed = json.loads(raw_text)
+                            readme_md = parsed.get("markdown_readme", "")
+                        except Exception:
+                            readme_md = raw_response.content.strip()
 
-                    readme_md = readme_md.replace("\\n", "\n").strip()
+                        readme_md = readme_md.replace("\\n", "\n").strip()
 
-                    st.markdown("### Rendered README Preview")
-                    st.markdown(readme_md)
-                    st.divider()
-                    st.subheader("Raw Markdown Code (Copyable)")
-                    st.code(readme_md, language="markdown")
+                        st.markdown("### Rendered README Preview")
+                        st.markdown(readme_md)
+                        st.divider()
+                        st.subheader("Raw Markdown Code (Copyable)")
+                        st.code(readme_md, language="markdown")
 
 
 # ==============================================================================
